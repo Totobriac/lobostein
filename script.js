@@ -9,31 +9,42 @@ var tamTile = 50;
 var escenario;
 var jugador;
 
-var paredColor = "black";
-var sueloColor = "grey";
-var jugadorColor = "red";
+var tiles;
+
+const FOV = 60;
+const medioFOV = FOV / 2;
+
+//var paredColor = "black";
+//var sueloColor = "grey";
+//var jugadorColor = "red";
 
 
 function init() {
   canvas.width = canvasAncho;
   canvas.height = canvasAlto;
+
+  reescalaCanvas();
+
   setInterval(principal, 1000 / FPS);
   escenario = new Level(canvas, ctx, nivel1);
   jugador = new Player(ctx, escenario, 100, 100);
+
+  tiles = new Image();
+  tiles.src = "./wolf.png"
 }
 
 
 var nivel1 = [
   [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+  [3, 0, 0, 0, 0, 0, 0, 0, 0, 1],
   [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
   [1, 0, 0, 1, 1, 1, 1, 1, 0, 1],
-  [1, 0, 0, 0, 1, 0, 0, 0, 0, 1],
-  [1, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+  [3, 0, 0, 2, 1, 0, 0, 0, 0, 1],
+  [1, 0, 0, 3, 1, 0, 0, 0, 0, 1],
   [1, 0, 0, 0, 1, 0, 0, 0, 0, 1],
   [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
   [1, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+  [1, 1, 1, 2, 2, 1, 1, 1, 1, 1],
 ]
 
 document.addEventListener('keydown', function (e) {
@@ -72,7 +83,25 @@ function normalizaAngulo(angulo) {
 }
 
 function distanciaEntrePuntos(x1, y1, x2, y2) {
-  return Math.sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1))
+  return Math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1))
+}
+
+function convierteRadianes(angulo) {
+  angulo = angulo * (Math.PI / 180);
+  return angulo;
+}
+
+function reescalaCanvas() {
+  canvas.style.width = "400px";
+  canvas.style.height = "400px";
+}
+
+function sueloTecho() {
+  ctx.fillStyle = "#666666";
+  ctx.fillRect(0, 0, 500, 250);
+
+  ctx.fillStyle = "#752300";
+  ctx.fillRect(0, 250, 500, 500);
 }
 
 class Rayo {
@@ -81,9 +110,15 @@ class Rayo {
     this.escenario = escenario;
     this.x = x;
     this.y = y;
-    this.angulo = anguloJugador;
+
     this.incrementoAngulo = incrementoAngulo;
+
+    this.anguloJugador = anguloJugador;
+    this.angulo = anguloJugador + incrementoAngulo;
+
     this.columna = columna;
+    this.distencia = 0;
+
     this.wallHitX = 0;
     this.wallHitY = 0;
 
@@ -92,8 +127,12 @@ class Rayo {
 
     this.wallHitXVertical = 0;
     this.wallHitYVertical = 0;
+
+    this.pixelTextura = 0;
+    this.idTextura = 0;
   }
   setAngulo(angulo) {
+    this.anguloJugador = angulo;
     this.angulo = normalizaAngulo(angulo + this.incrementoAngulo);
   }
   cast() {
@@ -201,27 +240,69 @@ class Rayo {
       distanciaVertical = distanciaEntrePuntos(this.x, this.y, this.wallHitXVertical, this.wallHitYVertical);
     }
 
-    if(distanciaHorizontal < distanciaVertical) {
+    if (distanciaHorizontal < distanciaVertical) {
       this.wallHitX = this.wallHitXHorizontal;
       this.wallHitY = this.wallHitYHorizontal;
+      this.distencia = distanciaHorizontal;
+
+      var casilla = parseInt(this.wallHitX / tamTile);
+      this.pixelTextura = this.wallHitX - (casilla * tamTile);
     }
     else {
       this.wallHitX = this.wallHitXVertical;
       this.wallHitY = this.wallHitYVertical;
+      this.distencia = distanciaVertical;
+
+      var casilla = parseInt(this.wallHitY / tamTile);
+      this.pixelTextura = this.wallHitY - (casilla * tamTile);
+
+
     }
-
+    this.idTextura = this.escenario.tile(this.wallHitX, this.wallHitY);
+    this.distencia = this.distencia * Math.cos(this.anguloJugador - this.angulo);
   }
-  dibuja() {
+
+  renderPared() {
     this.cast();
-    var xDestino = this.wallHitX;
-    var yDestino = this.wallHitY;
+    var altoTile = 500;
+    var distenciaPlanoProyeccion = (canvasAncho / 2) / Math.tan(medioFOV);
+    var alturaMuro = (altoTile / this.distencia) * distenciaPlanoProyeccion;
 
-    this.ctx.beginPath();
-    this.ctx.moveTo(this.x, this.y);
-    this.ctx.lineTo(xDestino, yDestino);
-    this.ctx.strokeStyle = 'red';
-    this.ctx.stroke();
+    var y0 = parseInt(canvasAlto / 2) - parseInt(alturaMuro / 2);
+    var y1 = y0 + alturaMuro;
+    var x = this.columna;
+
+    var altoTextura = 64;
+    var alturaImagen = y0 - y1;
+
+    ctx.imageSmoothingEnabled = false;
+
+    ctx.drawImage(tiles,
+      this.pixelTextura,
+      (this.idTextura - 1) * altoTextura,
+      1,
+      64,
+      this.columna,
+      y1,
+      1,
+      alturaImagen);
+    // this.ctx.beginPath();
+    // this.ctx.moveTo(x, y0);
+    // this.ctx.lineTo(x,y1);
+    // this.ctx.strokeStyle="grey";
+    // this.ctx.stroke();
   }
+  // dibuja() {
+  //   this.cast();
+  //   var xDestino = this.wallHitX;
+  //   var yDestino = this.wallHitY;
+
+  //   this.ctx.beginPath();
+  //   this.ctx.moveTo(this.x, this.y);
+  //   this.ctx.lineTo(xDestino, yDestino);
+  //   this.ctx.strokeStyle = 'red';
+  //   this.ctx.stroke();
+  // }
 }
 
 
@@ -245,16 +326,21 @@ class Level {
     if (this.matriz[y][x] != 0) choca = true;
     return choca;
   }
-  dibuja() {
-    var color;
-    for (var y = 0; y < this.altoM; y++) {
-      for (var x = 0; x < this.anchoM; x++) {
-        this.matriz[y][x] == 1 ? color = paredColor : color = sueloColor;
-        this.ctx.fillStyle = color;
-        this.ctx.fillRect(x * this.anchoT, y * this.altoT, this.anchoT, this.altoT)
-      }
-    }
+  tile(x, y) {
+    var casillaX = parseInt(x / this.anchoT);
+    var casillaY = parseInt(y / this.altoT);
+    return (this.matriz[casillaY][casillaX]);
   }
+  // dibuja() {
+  //   var color;
+  //   for (var y = 0; y < this.altoM; y++) {
+  //     for (var x = 0; x < this.anchoM; x++) {
+  //       this.matriz[y][x] == 1 ? color = paredColor : color = sueloColor;
+  //       this.ctx.fillStyle = color;
+  //       this.ctx.fillRect(x * this.anchoT, y * this.altoT, this.anchoT, this.altoT)
+  //     }
+  //   }
+  // }
 }
 
 class Player {
@@ -269,9 +355,22 @@ class Player {
     this.velMovimiento = 3;
     this.velGiro = 3 * (Math.PI / 180);
 
-    this.rayo;
-    this.rayo = new Rayo(this.ctx, this.escenario, this.x, this.y, this.anguloRotacion, 0);
-    this.rayo.cast();
+    this.numRayos = 500;		//Cantidad de rayos que vamos a castear (los mismos que tenga el ancho del canvas)
+    this.rayos = [];					//Array con todos los rayos
+
+
+    //CALCULAMOS EL ANGULO DE LOS RAYOS
+
+    var incrementoAngulo = convierteRadianes(FOV / this.numRayos);
+    var anguloInicial = convierteRadianes(this.anguloRotacion - medioFOV);
+
+    var anguloRayo = anguloInicial;
+
+    //CREAMOS RAYOS
+    for (let i = 0; i < this.numRayos; i++) {
+      this.rayos[i] = new Rayo(this.ctx, this.escenario, this.x, this.y, this.anguloRotacion, anguloRayo, i);
+      anguloRayo += incrementoAngulo;
+    }
   }
   arriba() {
     this.avanza = 1;
@@ -310,29 +409,29 @@ class Player {
 
     this.anguloRotacion += this.gira * this.velGiro;
     this.anguloRotacion = normalizaAngulo(this.anguloRotacion);
-    this.rayo.setAngulo(this.anguloRotacion);
-    this.rayo.x = this.x;
-    this.rayo.y = this.y;
+    for (let i = 0; i < this.numRayos; i++) {
+      this.rayos[i].x = this.x;
+      this.rayos[i].y = this.y;
+      this.rayos[i].setAngulo(this.anguloRotacion);
+    }
   }
   dibuja() {
     this.actualiza();
-    this.rayo.dibuja();
-    this.ctx.fillStyle = jugadorColor;
-    this.ctx.fillRect(this.x - 3, this.y - 3, 6, 6);
+    for (let i = 0; i < this.numRayos; i++) {
+      // this.rayos[i].dibuja();
+      this.rayos[i].renderPared();
+    }
 
-    // var xDestino = this.x + Math.cos(this.anguloRotacion) * 40;
-    // var yDestino = this.y + Math.sin(this.anguloRotacion) * 40;
-    // this.ctx.beginPath();
-    // this.ctx.moveTo(this.x, this.y);
-    // this.ctx.lineTo(xDestino, yDestino);
-    // this.ctx.strokeStyle = "red";
-    // this.ctx.stroke();
+    // this.ctx.fillStyle = jugadorColor;
+    // this.ctx.fillRect(this.x - 3, this.y - 3, 6, 6);
+
   }
 }
 
 function principal() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  escenario.dibuja();
+  //escenario.dibuja();
+  sueloTecho();
   jugador.dibuja();
 }
 
